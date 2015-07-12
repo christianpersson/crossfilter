@@ -1,5 +1,116 @@
 exports.crossfilter = crossfilter;
 
+function arrayDiff(oldArr, newArr) {
+  var added = [], removed = [];
+  var newVal, oldVal;
+  var oldIndex = newIndex = 0;
+
+  while (oldIndex < oldArr.length && newIndex < newArr.length) {
+    newVal = newArr[newIndex];
+    oldVal = oldArr[oldIndex];
+
+    if (newVal === oldVal) {
+      oldIndex++;
+      newIndex++;
+    }
+    else if (newVal > oldVal) {
+      removed.push(oldVal);
+      oldIndex++;
+    }
+    else {
+      added.push(newVal);
+      newIndex++;
+    }
+  }
+  while (oldIndex < oldArr.length) {
+    removed.push(oldArr[oldIndex]);
+    oldIndex++;
+  }
+  while (newIndex < newArr.length) {
+    added.push(newArr[newIndex]);
+    newIndex++;
+  }
+
+  return [added, removed];
+}
+
+function overLaps(x, y){
+  return x[1] >= y[0] && x[0] <= y[1];
+}
+
+// r1[0] < r2[0]
+// r1[0] < r1[1]
+// r2[0] < r2[1]
+function rangeDiff(r1, r2){
+  var removed = [];
+  var added = [];
+  if(r1[0] == r2[0]){
+   if(r1[1] > r2[1]){
+     removed.push([r2[1], r1[1]]);
+   }else if(r2[1] > r1[1]){
+     added.push([r1[1], r2[1]]);
+   }
+  }
+  else if(r2[0] > r1[1]){
+    removed.push(r1);
+    added.push(r2);
+  }
+  else if(r1[1] > r2[1]){
+    removed.push([r1[0], r2[0]]);
+    removed.push([r2[1], r1[1]]);
+  }
+  else{
+    removed.push([r1[0], r2[0]]);
+    added.push(r1[1], r2[1]);
+  }
+  return [added, removed];
+}
+
+function rangesToSignal(ranges){
+  var signal = [];
+  ranges.forEach(function(d){
+    signal.push([d[0], 1]);
+    signal.push([d[1], 0]);
+  });
+  return signal;
+}
+
+function rangeDiff(oldRanges, newRanges){
+  var oldSignal = rangesToSignal(oldRanges);
+  var newSignal = rangesToSignal(newRanges);
+
+
+}
+
+function subtractSignals(newSignal, oldSignal){
+  var oldIndex = newIndex = 0;
+  var oldVal, newVal;
+  var signal = [];
+  var oldSignalVal = 0;
+  var newSignalVal = 0;
+
+  while(oldIndex < oldSignal.length && newIndex < newSignal.length){
+    newVal = newSignal[newIndex];
+    oldVal = oldSignal[oldIndex];
+    if(newVal[0] > oldVal[0]){
+      oldSignalVal = oldVal[1];
+      oldIndex++;
+    }else if(newVal < oldVal){
+      newSignalVal = newVal[1];
+      newIndex++;
+    }
+    else{
+      newSignalVal = newVal[1];
+      oldSignalVal = oldVal[1];
+      oldIndex++;
+      newIndex++;
+    }
+    signal.push([oldVal[0], newSignal - oldSignal]);
+  }
+  return signal;
+}
+
+
 function crossfilter() {
   var crossfilter = {
     add: add,
@@ -90,7 +201,8 @@ function crossfilter() {
         indexListeners = [], // when data is added
         dimensionGroups = [],
         lo0 = 0,
-        hi0 = 0;
+        hi0 = 0,
+        oldValues = [];
 
     // Updating a dimension is a two-stage process. First, we must update the
     // associated filters for the newly-added records. Once all dimensions have
@@ -287,6 +399,45 @@ function crossfilter() {
       hi0 = n;
 
       return dimension;
+    }
+
+    function filterValues(values){
+
+      var added = [],
+          removed = [],
+          i;
+
+      if(oldValues.length === 0){
+        for(i = lo0; i < hi0; ++i){
+          filters[i] &= zero, removed.push(i);
+        }
+      }
+
+      var diff = arrayDiff(oldValues, values);
+
+      var addedBounds = diff[0].map(function(v){return crossfilter_filterExact(bisect, v)});
+      var removedBounds = diff[1].map(function(v){return crossfilter_filterExact(bisect, v)});
+
+      addedBounds.forEach(function(bound, arr){
+        for(i = bound[0]; i <= bound[1]; ++i){
+          filters[i] &= zero, arr.push(i);
+        }
+      });
+
+      removedBounds.forEach(function(bound){
+        for(i = bound[0]; i <= bound[1]; ++i){
+          filters[i] &= zero, removed.push(i);
+        }
+      });
+
+      filterListeners.forEach(function(l) { l(one, added, removed); });
+      oldValues = values;
+
+      lo0 = 0;
+      hi0 = n;
+
+      return dimension;
+
     }
 
     function filterIndexFunction(f) {

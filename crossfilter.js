@@ -528,6 +528,41 @@ function crossfilter_reduceSubtract(f) {
 }
 exports.crossfilter = crossfilter;
 
+function arrayDiff(oldArr, newArr) {
+  var added = [], removed = [];
+  var newVal, oldVal;
+  var oldIndex = newIndex = 0;
+
+  while (oldIndex < oldArr.length && newIndex < newArr.length) {
+    newVal = newArr[newIndex];
+    oldVal = oldArr[oldIndex];
+
+    if (newVal === oldVal) {
+      oldIndex++;
+      newIndex++;
+    }
+    else if (newVal > oldVal) {
+      removed.push(oldVal);
+      oldIndex++;
+    }
+    else {
+      added.push(newVal);
+      newIndex++;
+    }
+  }
+  while (oldIndex < oldArr.length) {
+    removed.push(oldArr[oldIndex]);
+    oldIndex++;
+  }
+  while (newIndex < newArr.length) {
+    added.push(newArr[newIndex]);
+    newIndex++;
+  }
+
+  return [added, removed];
+}
+
+
 function crossfilter() {
   var crossfilter = {
     add: add,
@@ -598,6 +633,7 @@ function crossfilter() {
       filterRange: filterRange,
       filterFunction: filterFunction,
       filterAll: filterAll,
+      filterValues: filterValues,
       top: top,
       bottom: bottom,
       group: group,
@@ -618,7 +654,8 @@ function crossfilter() {
         indexListeners = [], // when data is added
         dimensionGroups = [],
         lo0 = 0,
-        hi0 = 0;
+        hi0 = 0,
+        oldValues = [];
 
     // Updating a dimension is a two-stage process. First, we must update the
     // associated filters for the newly-added records. Once all dimensions have
@@ -815,6 +852,52 @@ function crossfilter() {
       hi0 = n;
 
       return dimension;
+    }
+
+    function filterValues(newValues){
+      console.log("filterValuews", newValues, lo0, hi0);
+
+      var added = [],
+          removed = [],
+          i;
+
+
+      var diff = arrayDiff(oldValues, newValues);
+
+      console.log(diff);
+
+      var addedBounds = diff[0].map(function(v){return crossfilter_filterExact(bisect, v)(values)});
+      var removedBounds = diff[1].map(function(v){return crossfilter_filterExact(bisect, v)(values)});
+
+      console.log(addedBounds)
+      console.log(removedBounds)
+
+      var k;
+      addedBounds.forEach(function(bound){
+        for(i = bound[0]; i < bound[1]; ++i){
+          filters[k=i] &= zero, added.push(k);
+          console.log("add", k, values[k])
+        }
+      });
+
+      removedBounds.forEach(function(bound){
+        for(i = bound[0]; i < bound[1]; ++i){
+          filters[k=i] &= zero, removed.push(k);
+          console.log("remove", k, values[k])
+        }
+      });
+
+      console.log("remove", removed);
+      console.log("added", added);
+
+      filterListeners.forEach(function(l) { l(one, added, removed); });
+      oldValues = values;
+
+      lo0 = 0;
+      hi0 = n;
+
+      return dimension;
+
     }
 
     function filterIndexFunction(f) {
