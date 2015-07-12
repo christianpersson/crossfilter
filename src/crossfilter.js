@@ -38,76 +38,78 @@ function overLaps(x, y){
   return x[1] >= y[0] && x[0] <= y[1];
 }
 
-// r1[0] < r2[0]
-// r1[0] < r1[1]
-// r2[0] < r2[1]
-function rangeDiff(r1, r2){
-  var removed = [];
-  var added = [];
-  if(r1[0] == r2[0]){
-   if(r1[1] > r2[1]){
-     removed.push([r2[1], r1[1]]);
-   }else if(r2[1] > r1[1]){
-     added.push([r1[1], r2[1]]);
-   }
-  }
-  else if(r2[0] > r1[1]){
-    removed.push(r1);
-    added.push(r2);
-  }
-  else if(r1[1] > r2[1]){
-    removed.push([r1[0], r2[0]]);
-    removed.push([r2[1], r1[1]]);
-  }
-  else{
-    removed.push([r1[0], r2[0]]);
-    added.push(r1[1], r2[1]);
-  }
-  return [added, removed];
-}
 
-function rangesToSignal(ranges){
+
+function rangesToSignal(ranges) {
   var signal = [];
-  ranges.forEach(function(d){
+  ranges.forEach(function (d) {
     signal.push([d[0], 1]);
     signal.push([d[1], 0]);
   });
   return signal;
 }
 
-function rangeDiff(oldRanges, newRanges){
-  var oldSignal = rangesToSignal(oldRanges);
-  var newSignal = rangesToSignal(newRanges);
+function signalToRange(signal) {
+  var val, start, stop;
+  var added = [];
+  var removed = [];
 
-
+  for (var i = 1; i < signal.length; i++) {
+    val = signal[i - 1][1];
+    start = signal[i - 1][0];
+    stop = signal[i][0];
+    if (val === 1) {
+      added.push([start, stop]);
+    } else if(val === -1){
+      removed.push([start, stop]);
+    }
+  }
+  return [added, removed];
 }
 
-function subtractSignals(newSignal, oldSignal){
+
+function subtractSignals(newSignal, oldSignal) {
   var oldIndex = newIndex = 0;
   var oldVal, newVal;
   var signal = [];
   var oldSignalVal = 0;
   var newSignalVal = 0;
 
-  while(oldIndex < oldSignal.length && newIndex < newSignal.length){
+  while (oldIndex < oldSignal.length && newIndex < newSignal.length) {
     newVal = newSignal[newIndex];
     oldVal = oldSignal[oldIndex];
-    if(newVal[0] > oldVal[0]){
+    if (newVal[0] > oldVal[0]) {
       oldSignalVal = oldVal[1];
       oldIndex++;
-    }else if(newVal < oldVal){
+    } else if (newVal[0] < oldVal[0]) {
       newSignalVal = newVal[1];
       newIndex++;
     }
-    else{
+    else {
       newSignalVal = newVal[1];
       oldSignalVal = oldVal[1];
       oldIndex++;
       newIndex++;
     }
-    signal.push([oldVal[0], newSignal - oldSignal]);
+    console.log(oldIndex, newIndex);
+    signal.push([Math.min(oldVal[0], newVal[0]), newSignalVal - oldSignalVal]);
+  }
+  while (oldIndex < oldSignal.length) {
+    signal.push([oldSignal[oldIndex][0], -oldSignal[oldIndex][1]]);
+    oldIndex++;
+  }
+  while (newIndex < newSignal.length) {
+    signal.push([newSignal[newIndex][0], newSignal[newIndex][1]]);
+    newIndex++;
   }
   return signal;
+}
+
+function subtractRanges(oldRange, newRange){
+  var oldSignal = rangesToSignal(oldRange);
+  var newSignal = rangesToSignal(newRange);
+  var signal = subtractSignals(newSignal, oldSignal);
+  return signalToRange(signal);
 }
 
 
@@ -117,7 +119,8 @@ function crossfilter() {
     remove: removeData,
     dimension: dimension,
     groupAll: groupAll,
-    size: size
+    size: size,
+    subtractRanges: subtractRanges
   };
 
   var data = [], // the records

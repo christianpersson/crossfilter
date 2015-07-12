@@ -562,6 +562,84 @@ function arrayDiff(oldArr, newArr) {
   return [added, removed];
 }
 
+function overLaps(x, y){
+  return x[1] >= y[0] && x[0] <= y[1];
+}
+
+
+
+function rangesToSignal(ranges) {
+  var signal = [];
+  ranges.forEach(function (d) {
+    signal.push([d[0], 1]);
+    signal.push([d[1], 0]);
+  });
+  return signal;
+}
+
+function signalToRange(signal) {
+  var val, start, stop;
+  var added = [];
+  var removed = [];
+
+  for (var i = 1; i < signal.length; i++) {
+    val = signal[i - 1][1];
+    start = signal[i - 1][0];
+    stop = signal[i][0];
+    if (val === 1) {
+      added.push([start, stop]);
+    } else if(val === -1){
+      removed.push([start, stop]);
+    }
+  }
+  return [added, removed];
+}
+
+
+function subtractSignals(newSignal, oldSignal) {
+  var oldIndex = newIndex = 0;
+  var oldVal, newVal;
+  var signal = [];
+  var oldSignalVal = 0;
+  var newSignalVal = 0;
+
+  while (oldIndex < oldSignal.length && newIndex < newSignal.length) {
+    newVal = newSignal[newIndex];
+    oldVal = oldSignal[oldIndex];
+    if (newVal[0] > oldVal[0]) {
+      oldSignalVal = oldVal[1];
+      oldIndex++;
+    } else if (newVal[0] < oldVal[0]) {
+      newSignalVal = newVal[1];
+      newIndex++;
+    }
+    else {
+      newSignalVal = newVal[1];
+      oldSignalVal = oldVal[1];
+      oldIndex++;
+      newIndex++;
+    }
+    console.log(oldIndex, newIndex);
+    signal.push([Math.min(oldVal[0], newVal[0]), newSignalVal - oldSignalVal]);
+  }
+  while (oldIndex < oldSignal.length) {
+    signal.push([oldSignal[oldIndex][0], -oldSignal[oldIndex][1]]);
+    oldIndex++;
+  }
+  while (newIndex < newSignal.length) {
+    signal.push([newSignal[newIndex][0], newSignal[newIndex][1]]);
+    newIndex++;
+  }
+  return signal;
+}
+
+function subtractRanges(oldRange, newRange){
+  var oldSignal = rangesToSignal(oldRange);
+  var newSignal = rangesToSignal(newRange);
+  var signal = subtractSignals(newSignal, oldSignal);
+  return signalToRange(signal);
+}
+
 
 function crossfilter() {
   var crossfilter = {
@@ -569,7 +647,8 @@ function crossfilter() {
     remove: removeData,
     dimension: dimension,
     groupAll: groupAll,
-    size: size
+    size: size,
+    subtractRanges: subtractRanges
   };
 
   var data = [], // the records
@@ -633,7 +712,6 @@ function crossfilter() {
       filterRange: filterRange,
       filterFunction: filterFunction,
       filterAll: filterAll,
-      filterValues: filterValues,
       top: top,
       bottom: bottom,
       group: group,
@@ -854,41 +932,34 @@ function crossfilter() {
       return dimension;
     }
 
-    function filterValues(newValues){
-      console.log("filterValuews", newValues, lo0, hi0);
+    function filterValues(values){
 
       var added = [],
           removed = [],
           i;
 
+      if(oldValues.length === 0){
+        for(i = lo0; i < hi0; ++i){
+          filters[i] &= zero, removed.push(i);
+        }
+      }
 
-      var diff = arrayDiff(oldValues, newValues);
+      var diff = arrayDiff(oldValues, values);
 
-      console.log(diff);
+      var addedBounds = diff[0].map(function(v){return crossfilter_filterExact(bisect, v)});
+      var removedBounds = diff[1].map(function(v){return crossfilter_filterExact(bisect, v)});
 
-      var addedBounds = diff[0].map(function(v){return crossfilter_filterExact(bisect, v)(values)});
-      var removedBounds = diff[1].map(function(v){return crossfilter_filterExact(bisect, v)(values)});
-
-      console.log(addedBounds)
-      console.log(removedBounds)
-
-      var k;
-      addedBounds.forEach(function(bound){
-        for(i = bound[0]; i < bound[1]; ++i){
-          filters[k=i] &= zero, added.push(k);
-          console.log("add", k, values[k])
+      addedBounds.forEach(function(bound, arr){
+        for(i = bound[0]; i <= bound[1]; ++i){
+          filters[i] &= zero, arr.push(i);
         }
       });
 
       removedBounds.forEach(function(bound){
-        for(i = bound[0]; i < bound[1]; ++i){
-          filters[k=i] &= zero, removed.push(k);
-          console.log("remove", k, values[k])
+        for(i = bound[0]; i <= bound[1]; ++i){
+          filters[i] &= zero, removed.push(i);
         }
       });
-
-      console.log("remove", removed);
-      console.log("added", added);
 
       filterListeners.forEach(function(l) { l(one, added, removed); });
       oldValues = values;
