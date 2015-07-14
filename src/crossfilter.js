@@ -50,6 +50,7 @@ function rangesToSignal(ranges) {
 }
 
 function signalToRange(signal) {
+  console.log(signal);
   var val, start, stop;
   var added = [];
   var removed = [];
@@ -184,6 +185,7 @@ function crossfilter() {
       filterRange: filterRange,
       filterFunction: filterFunction,
       filterAll: filterAll,
+      filterValues: filterValues,
       top: top,
       bottom: bottom,
       group: group,
@@ -404,37 +406,67 @@ function crossfilter() {
       return dimension;
     }
 
-    function filterValues(values){
+    function filterValues(newValues){
+
+      console.log(newValues);
 
       var added = [],
           removed = [],
-          i;
+          i, k;
 
-      if(oldValues.length === 0){
-        for(i = lo0; i < hi0; ++i){
-          filters[i] &= zero, removed.push(i);
+      if(oldValues.length === 0 && newValues.length === 1){
+        var start = bisect.left(values, newValues[0], 0, n);
+        var end = bisect.right(values, newValues[0], start, n);
+
+        for(i = 0; i < start; i++){
+          filters[k = index[i]] ^= one;
+          removed.push(k);
+          console.log("Removed", i, values[i]);
         }
+        for(i = end; i < n; i++){
+          filters[k = index[i]] ^= one;
+          removed.push(k);
+          console.log("Removed", i, values[i]);
+        }
+      }else{
+        var diff = arrayDiff(oldValues, newValues);
+        console.log(diff);
+
+        var temp = 0;
+
+        var addedBounds = diff[0].map(function(v){
+          var range = [bisect.left(values, v, temp, n), bisect.right(values, v, temp, n)];
+          temp = range[1];
+          return range;
+        });
+
+        temp = 0;
+        var removedBounds = diff[1].map(function(v){
+          var range = [bisect.left(values, v, temp, n), bisect.right(values, v, temp, n)];
+          temp = range[1];
+          return range;
+        });
+
+        addedBounds.forEach(function(bound){
+          for(i = bound[0]; i < bound[1]; ++i){
+            filters[k = index[i]] ^= one;
+            added.push(k);
+            console.log("Added", i, values[i]);
+          }
+        });
+
+        removedBounds.forEach(function(bound){
+          for(i = bound[0]; i < bound[1]; ++i){
+            filters[k = index[i]] ^= one;
+            removed.push(k);
+            console.log("Removed...", i, values[i]);
+          }
+        });
+
       }
 
-      var diff = arrayDiff(oldValues, values);
-
-      var addedBounds = diff[0].map(function(v){return crossfilter_filterExact(bisect, v)});
-      var removedBounds = diff[1].map(function(v){return crossfilter_filterExact(bisect, v)});
-
-      addedBounds.forEach(function(bound, arr){
-        for(i = bound[0]; i <= bound[1]; ++i){
-          filters[i] &= zero, arr.push(i);
-        }
-      });
-
-      removedBounds.forEach(function(bound){
-        for(i = bound[0]; i <= bound[1]; ++i){
-          filters[i] &= zero, removed.push(i);
-        }
-      });
-
       filterListeners.forEach(function(l) { l(one, added, removed); });
-      oldValues = values;
+      oldValues = newValues;
 
       lo0 = 0;
       hi0 = n;
@@ -817,6 +849,8 @@ function crossfilter() {
       function reduceSum(value) {
         return reduce(crossfilter_reduceAdd(value), crossfilter_reduceSubtract(value), crossfilter_zero);
       }
+
+
 
       // Sets the reduce order, using the specified accessor.
       function order(value) {
