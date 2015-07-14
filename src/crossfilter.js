@@ -534,6 +534,8 @@ function crossfilter() {
         reduce: reduce,
         reduceCount: reduceCount,
         reduceSum: reduceSum,
+        reduce2D: reduce2D,
+        reduceMetrics: reduceMetrics,
         order: order,
         orderNatural: orderNatural,
         size: size,
@@ -850,7 +852,122 @@ function crossfilter() {
         return reduce(crossfilter_reduceAdd(value), crossfilter_reduceSubtract(value), crossfilter_zero);
       }
 
+      function reduceAddMetrics(metrics){
+        return function(p, v) {
+          metrics.forEach(function(d){
+            p[d] += v[d];
+          });
+          p._count++;
+          return p;
+        };
+      }
 
+      function reduceRemoveMetrics(metrics){
+        return function(p,v) {
+          metrics.forEach(function(d){
+            p[d] -= v[d];
+          });
+          p._count--;
+          return p;
+        };
+      }
+
+      function reduceInitialMetrics(metrics){
+        return function() {
+          var o = {};
+          metrics.forEach(function(d){
+            o[d] = 0;
+          });
+          o._count = 0;
+          return o;
+        };
+      }
+
+      function reduceMetrics(metrics){
+        if (!(metrics instanceof Array)) {
+          return reduceSum(function(d){return d[metrics]});
+        }
+        return reduce(reduceAddMetrics(metrics), reduceRemoveMetrics(metrics), reduceInitialMetrics(metrics));
+      }
+
+
+      function reduce2D(attr, metrics, count) {
+        console.log(attr, metrics, count);
+        var reduceAdd, reduceRemove, reduceInitial;
+        if(attr === undefined){
+          throw "ERROR";
+        }
+        if (arguments.length === 1) {
+          reduceAdd = crossfilter_reduceIncrement; reduceRemove = crossfilter_reduceDecrement; reduceInitial = crossfilter_zero;
+        }
+        else if (metrics.length === 1 && count === undefined) {
+          var value = function(d){return d[metrics[0]];};
+          reduceAdd = crossfilter_reduceAdd(value);
+          reduceRemove = crossfilter_reduceSubtract(value);
+          reduceInitial = crossfilter_zero;
+        }
+        else{
+          var value = metrics[0];
+          reduceAdd = reduceAddMetrics(metrics);
+          reduceRemove = reduceRemoveMetrics(metrics);
+          reduceInitial = reduceInitialMetrics(metrics);
+        }
+
+        function _reduceAdd(p, v) {
+          if (!p[v[attr]]) {
+            p[v[attr]] = reduceInitial();
+          }
+          p[v[attr]] = reduceAdd(p[v[attr]],v);
+          return p;
+        }
+
+        function _reduceRemove(p, v) {
+          if (p[v[attr]]) {
+            p[v[attr]]-=value(v);
+          }else{
+            throw "ThisShouldNotThrow...";
+          }
+          p[v[attr]] = reduceRemove(p[v[attr]],v);
+          return p;
+        }
+
+        function _reduceInitial() {
+          return {};
+        }
+
+        return reduce(_reduceAdd, _reduceRemove, _reduceInitial);
+
+      }
+
+      function reduce2D_2(attr, reduceAdd, reduceRemove, reduceInitial) {
+        if(value === undefined){
+          value =  function(){return 1;};
+        }
+
+        function _reduceAdd(p, v) {
+          if (!p[v[attr]]) {
+            p[v[attr]] = reduceInitial();
+          }
+          p[v[attr]] = reduceAdd(p[v[attr]],v);
+          return p;
+        }
+
+        function _reduceRemove(p, v) {
+          if (p[v[attr]]) {
+            p[v[attr]]-=value(v);
+          }else{
+            throw "ThisShouldNotThrow...";
+          }
+          p[v[attr]] = reduceRemove(p[v[attr]],v);
+          return p;
+        }
+
+        function _reduceInitial() {
+          return {};
+        }
+
+        return reduce(_reduceAdd, _reduceRemove, _reduceInitial);
+      }
 
       // Sets the reduce order, using the specified accessor.
       function order(value) {
