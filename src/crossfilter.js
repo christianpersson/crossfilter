@@ -922,11 +922,6 @@ function crossfilter() {
         }
 
         function _reduceRemove(p, v) {
-          if (p[v[attr]]) {
-            p[v[attr]]-=value(v);
-          }else{
-            throw "ThisShouldNotThrow...";
-          }
           p[v[attr]] = reduceRemove(p[v[attr]],v);
           return p;
         }

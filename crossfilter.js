@@ -578,6 +578,7 @@ function rangesToSignal(ranges) {
 }
 
 function signalToRange(signal) {
+  console.log(signal);
   var val, start, stop;
   var added = [];
   var removed = [];
@@ -712,6 +713,7 @@ function crossfilter() {
       filterRange: filterRange,
       filterFunction: filterFunction,
       filterAll: filterAll,
+      filterValues: filterValues,
       top: top,
       bottom: bottom,
       group: group,
@@ -932,37 +934,67 @@ function crossfilter() {
       return dimension;
     }
 
-    function filterValues(values){
+    function filterValues(newValues){
+
+      console.log(newValues);
 
       var added = [],
           removed = [],
-          i;
+          i, k;
 
-      if(oldValues.length === 0){
-        for(i = lo0; i < hi0; ++i){
-          filters[i] &= zero, removed.push(i);
+      if(oldValues.length === 0 && newValues.length === 1){
+        var start = bisect.left(values, newValues[0], 0, n);
+        var end = bisect.right(values, newValues[0], start, n);
+
+        for(i = 0; i < start; i++){
+          filters[k = index[i]] ^= one;
+          removed.push(k);
+          console.log("Removed", i, values[i]);
         }
+        for(i = end; i < n; i++){
+          filters[k = index[i]] ^= one;
+          removed.push(k);
+          console.log("Removed", i, values[i]);
+        }
+      }else{
+        var diff = arrayDiff(oldValues, newValues);
+        console.log(diff);
+
+        var temp = 0;
+
+        var addedBounds = diff[0].map(function(v){
+          var range = [bisect.left(values, v, temp, n), bisect.right(values, v, temp, n)];
+          temp = range[1];
+          return range;
+        });
+
+        temp = 0;
+        var removedBounds = diff[1].map(function(v){
+          var range = [bisect.left(values, v, temp, n), bisect.right(values, v, temp, n)];
+          temp = range[1];
+          return range;
+        });
+
+        addedBounds.forEach(function(bound){
+          for(i = bound[0]; i < bound[1]; ++i){
+            filters[k = index[i]] ^= one;
+            added.push(k);
+            console.log("Added", i, values[i]);
+          }
+        });
+
+        removedBounds.forEach(function(bound){
+          for(i = bound[0]; i < bound[1]; ++i){
+            filters[k = index[i]] ^= one;
+            removed.push(k);
+            console.log("Removed...", i, values[i]);
+          }
+        });
+
       }
 
-      var diff = arrayDiff(oldValues, values);
-
-      var addedBounds = diff[0].map(function(v){return crossfilter_filterExact(bisect, v)});
-      var removedBounds = diff[1].map(function(v){return crossfilter_filterExact(bisect, v)});
-
-      addedBounds.forEach(function(bound, arr){
-        for(i = bound[0]; i <= bound[1]; ++i){
-          filters[i] &= zero, arr.push(i);
-        }
-      });
-
-      removedBounds.forEach(function(bound){
-        for(i = bound[0]; i <= bound[1]; ++i){
-          filters[i] &= zero, removed.push(i);
-        }
-      });
-
       filterListeners.forEach(function(l) { l(one, added, removed); });
-      oldValues = values;
+      oldValues = newValues;
 
       lo0 = 0;
       hi0 = n;
@@ -1030,6 +1062,8 @@ function crossfilter() {
         reduce: reduce,
         reduceCount: reduceCount,
         reduceSum: reduceSum,
+        reduce2D: reduce2D,
+        reduceMetrics: reduceMetrics,
         order: order,
         orderNatural: orderNatural,
         size: size,
@@ -1344,6 +1378,118 @@ function crossfilter() {
       // A convenience method for reducing by sum(value).
       function reduceSum(value) {
         return reduce(crossfilter_reduceAdd(value), crossfilter_reduceSubtract(value), crossfilter_zero);
+      }
+
+      function reduceAddMetrics(metrics){
+        return function(p, v) {
+          metrics.forEach(function(d){
+            p[d] += v[d];
+          });
+          p._count++;
+          return p;
+        };
+      }
+
+      function reduceRemoveMetrics(metrics){
+        return function(p,v) {
+          metrics.forEach(function(d){
+            p[d] -= v[d];
+          });
+          p._count--;
+          return p;
+        };
+      }
+
+      function reduceInitialMetrics(metrics){
+        return function() {
+          var o = {};
+          metrics.forEach(function(d){
+            o[d] = 0;
+          });
+          o._count = 0;
+          return o;
+        };
+      }
+
+      function reduceMetrics(metrics){
+        if (!(metrics instanceof Array)) {
+          return reduceSum(function(d){return d[metrics]});
+        }
+        return reduce(reduceAddMetrics(metrics), reduceRemoveMetrics(metrics), reduceInitialMetrics(metrics));
+      }
+
+
+      function reduce2D(attr, metrics, count) {
+        console.log(attr, metrics, count);
+        var reduceAdd, reduceRemove, reduceInitial;
+        if(attr === undefined){
+          throw "ERROR";
+        }
+        if (arguments.length === 1) {
+          reduceAdd = crossfilter_reduceIncrement; reduceRemove = crossfilter_reduceDecrement; reduceInitial = crossfilter_zero;
+        }
+        else if (metrics.length === 1 && count === undefined) {
+          var value = function(d){return d[metrics[0]];};
+          reduceAdd = crossfilter_reduceAdd(value);
+          reduceRemove = crossfilter_reduceSubtract(value);
+          reduceInitial = crossfilter_zero;
+        }
+        else{
+          var value = metrics[0];
+          reduceAdd = reduceAddMetrics(metrics);
+          reduceRemove = reduceRemoveMetrics(metrics);
+          reduceInitial = reduceInitialMetrics(metrics);
+        }
+
+        function _reduceAdd(p, v) {
+          if (!p[v[attr]]) {
+            p[v[attr]] = reduceInitial();
+          }
+          p[v[attr]] = reduceAdd(p[v[attr]],v);
+          return p;
+        }
+
+        function _reduceRemove(p, v) {
+          p[v[attr]] = reduceRemove(p[v[attr]],v);
+          return p;
+        }
+
+        function _reduceInitial() {
+          return {};
+        }
+
+        return reduce(_reduceAdd, _reduceRemove, _reduceInitial);
+
+      }
+
+      function reduce2D_2(attr, reduceAdd, reduceRemove, reduceInitial) {
+        if(value === undefined){
+          value =  function(){return 1;};
+        }
+
+        function _reduceAdd(p, v) {
+          if (!p[v[attr]]) {
+            p[v[attr]] = reduceInitial();
+          }
+          p[v[attr]] = reduceAdd(p[v[attr]],v);
+          return p;
+        }
+
+        function _reduceRemove(p, v) {
+          if (p[v[attr]]) {
+            p[v[attr]]-=value(v);
+          }else{
+            throw "ThisShouldNotThrow...";
+          }
+          p[v[attr]] = reduceRemove(p[v[attr]],v);
+          return p;
+        }
+
+        function _reduceInitial() {
+          return {};
+        }
+
+        return reduce(_reduceAdd, _reduceRemove, _reduceInitial);
       }
 
       // Sets the reduce order, using the specified accessor.
